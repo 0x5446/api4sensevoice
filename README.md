@@ -25,6 +25,52 @@ pip install -r requirements.txt
 python api.py
 ```
 
+## API 说明
+
+### Transcribe Audio
+
+- **路径**: `/transcribe`
+- **方法**: `POST`
+- **概要**: 转录音频
+- **请求体**:
+  - `multipart/form-data`
+  - **参数**:
+    - `file` (必须): 要转录的音频文件
+
+- **响应**:
+  - **200 成功响应**:
+    - **内容类型**: `application/json`
+    - **Schema**:
+      - `errno` (integer): 错误编号
+      - `errmsg` (string): 错误信息
+      - `resp` (object): 响应对象
+  - **422 验证错误**:
+    - **内容类型**: `application/json`
+    - **Schema**:
+      - `detail` (array): 错误详情数组
+
+请求示例:
+
+```bash
+curl -X 'POST'  
+  'http://yourapiaddress/transcribe'  
+  -H 'accept: application/json'  
+  -H 'Content-Type: multipart/form-data'  
+  -F 'file=@path_to_your_audio_file'
+```
+
+响应示例（200 成功响应）:
+
+```json
+{
+  "errno": 0,
+  "errmsg": "Success",
+  "resp": {
+    // 转录结果
+  }
+}
+```
+
 ## 计划
 
 [x] 一句话识别（适合段语音）
@@ -32,7 +78,7 @@ python api.py
 
 ## 贡献
 
-如果你想为该项目做出贡献，请先阅读[贡献指南](CONTRIBUTING.md)。我们欢迎所有形式的贡献，包括但不限于：
+欢迎所有形式的贡献，包括但不限于：
 
 - 报告Bug
 - 提出功能请求
@@ -41,7 +87,7 @@ python api.py
 
 ## License
 
-此项目遵循[MIT License](LICENSE)。详情请参阅LICENSE文件。
+此项目遵循[MIT License](https://opensource.org/license/mit)。详情请参阅LICENSE文件。
 
 ## 更多信息
 
