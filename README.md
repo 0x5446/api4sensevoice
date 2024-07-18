@@ -7,8 +7,8 @@
 首先，克隆此仓库到你的本地机器：
 
 ```bash
-git clone https://github.com/你的用户名/你的仓库名.git
-cd 你的仓库名
+git clone https://github.com/0x5446/api4sensevoice.git
+cd api4sensevoice
 ```
 
 然后，使用以下命令安装所需的依赖项：
