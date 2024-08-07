@@ -44,10 +44,6 @@ python server.py
       - `code` (integer): 错误编号
       - `msg` (string): 错误信息
       - `data` (object): 响应对象
-  - **422 验证错误**:
-    - **内容类型**: `application/json`
-    - **Schema**:
-      - `detail` (array): 错误详情数组
 
 请求示例:
 
