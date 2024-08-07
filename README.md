@@ -41,9 +41,9 @@ python server.py
   - **200 成功响应**:
     - **内容类型**: `application/json`
     - **Schema**:
-      - `errno` (integer): 错误编号
-      - `errmsg` (string): 错误信息
-      - `resp` (object): 响应对象
+      - `code` (integer): 错误编号
+      - `msg` (string): 错误信息
+      - `data` (object): 响应对象
   - **422 验证错误**:
     - **内容类型**: `application/json`
     - **Schema**:
@@ -63,9 +63,9 @@ curl -X 'POST'
 
 ```json
 {
-  "errno": 0,
-  "errmsg": "Success",
-  "resp": {
+  "code": 0,
+  "msg": "Success",
+  "data": {
     // 转录结果
   }
 }
