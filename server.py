@@ -1,17 +1,25 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, Request, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
 from pydantic import BaseModel
 from funasr import AutoModel
 import asyncio
-import uvicorn
 import numpy as np
 import torch
 import torchaudio
 import io
 import soundfile as sf
 import argparse
+import uvicorn
+import time
+import logging
 
+# Set up logging
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 
 emo_dict = {
@@ -142,45 +150,100 @@ app.add_middleware(
 )
 
 # Initialize the model outside the endpoint to avoid reloading it for each request
-model = "iic/SenseVoiceSmall"
-model = AutoModel(model=model,
+model = AutoModel(model="iic/SenseVoiceSmall",
 #                  vad_model="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
 #                  vad_kwargs={"max_single_segment_time": 30000},
                   trust_remote_code=True,
                   )
 
+
+
+def transcribe_with_timing(*args, **kwargs):
+    start_time = time.time()
+    result = model.generate(*args, **kwargs)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Transcription execution time: {elapsed_time:.2f} seconds")
+    return result, elapsed_time
+
+
+@app.exception_handler(Exception)
+async def custom_exception_handler(request: Request, exc: Exception):
+    logger.error("Exception occurred", exc_info=True)
+    if isinstance(exc, HTTPException):
+        status_code = exc.status_code
+        message = exc.detail
+        data = ""
+    elif isinstance(exc, RequestValidationError):
+        status_code = HTTP_422_UNPROCESSABLE_ENTITY
+        message = "Validation error: " + str(exc.errors())
+        data = ""
+    else:
+        status_code = 500
+        message = "Internal server error: " + str(exc)
+        data = ""
+    
+    return JSONResponse(
+        status_code=status_code,
+        content=TranscriptionResponse(
+            code=status_code,
+            msg=message,
+            data=data
+        ).model_dump()
+    )
+
 # Define the response model
 class TranscriptionResponse(BaseModel):
-    errno: int
-    errmsg: str
-    resp: dict
+    code: int
+    msg: str
+    data: str
 
 @app.post("/transcribe", response_model=TranscriptionResponse)
 async def transcribe_audio(file: UploadFile = File(...)):
-    if file.content_type not in ["audio/wav", "audio/x-wav"]:
-        raise HTTPException(status_code=400, detail="Invalid file type. Please upload a WAV file.")
-    
     try:
         # Read the file content and reset the file pointer
         file.file.seek(0)
         file_content = await file.read()
+
+        print(f"[DEBUG] UploadFile Object is {file}")
+        # Check the file format by its header
+        if file.content_type.startswith('audio/wav'):
+            #suffix = "wav"
+            # Use soundfile to load audio and ensure it's int16
+            input_wav, sr = sf.read(io.BytesIO(file_content), dtype=np.int16)
+            bit_depth = sf.info(io.BytesIO(file_content)).subtype
+            is16 = True if bit_depth =='PCM_16' else False
+                        
+        elif file.content_type.startswith('audio/webm'):
+            #suffix = "webm"
+            # Use torchaudio to load webm audio file
+            input_wav, sr = torchaudio.load(io.BytesIO(file_content))
+            dtype = input_wav.dtype
+            is16 = True if dtype == np.int16 else False
+            input_wav = input_wav.squeeze().numpy()
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported audio format")
+
         
-        # Use soundfile to load audio and ensure it's int16
-        input_wav, sr = sf.read(io.BytesIO(file_content), dtype=np.int16)
+        #filename = (file.filename if file.filename else "test") + "." + suffix
+        #with open(filename, "wb") as f:
+            #f.write(file_content)
+            
         
         if len(input_wav.shape) > 1:
             input_wav = input_wav.mean(-1)
 
-        input_wav = input_wav.astype(np.float32) / np.iinfo(np.int16).max
-        
+        if is16: #indicate the audio data is not fload, so convert it to float32
+            input_wav = input_wav.astype(np.float32) / np.iinfo(np.int16).max
+
         if sr != 16000:
-            print(f"audio_sr: {sr}")
+            print(f"[DEBUG] Audio data sample rate is {sr}")
             resampler = torchaudio.transforms.Resample(sr, 16000)
             input_wav_t = torch.from_numpy(input_wav).to(torch.float32)
             input_wav = resampler(input_wav_t[None, :])[0, :].numpy()
                 
         async def generate_text():
-            return await asyncio.to_thread(model.generate, 
+            return await asyncio.to_thread(transcribe_with_timing, 
                                            input=input_wav,
                                            cache={},
                                            language="auto",
@@ -188,29 +251,32 @@ async def transcribe_audio(file: UploadFile = File(...)):
                                            batch_size=64)
 
         # Run the asynchronous function
-        res = await generate_text()
-        text = format_str_v3(res[0]["text"])
-        
-        print(res, text)
+        # Run the asynchronous function
+        resp, elapsed_time = await generate_text()
+        print(f"[DEBUG] Transcribe raw response is {resp}")
+        text = format_str_v3(resp[0]["text"])
+        print(f'[DEBUG] res:{resp} text:{text}')
         
         # Create the response
-        response = {
-            "code": 0,
-            "msg": "Success",
-            "resp": text
-        }
+        response = TranscriptionResponse(
+            code=0,
+            msg=f"success, transcription time: {elapsed_time:.2f} seconds",
+            data=text
+        )
     except Exception as e: 
-        response = {
-            "code": 1,
-            "msg": str(e),
-            "resp": {}
-        }
-    
-    return JSONResponse(content=response)
+        logger.error("Exception occurred", exc_info=True)
+        response = TranscriptionResponse(
+            code=1,
+            msg=str(e),
+            data=""
+        )
+    return JSONResponse(content=response.model_dump())
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the FastAPI app with a specified port.")
     parser.add_argument('--port', type=int, default=7000, help='Port number to run the FastAPI app on.')
+    parser.add_argument('--certfile', type=str, default='path_to_your_certfile', help='SSL certificate file')
+    parser.add_argument('--keyfile', type=str, default='path_to_your_keyfile', help='SSL key file')
     args = parser.parse_args()
     
-    uvicorn.run(app, host="0.0.0.0", port=args.port)
+    uvicorn.run(app, host="0.0.0.0", port=args.port, ssl_certfile=args.certfile, ssl_keyfile=args.keyfile)
