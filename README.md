@@ -22,7 +22,7 @@ pip install -r requirements.txt
 要运行API Server，请使用以下命令：
 
 ```bash
-python api.py
+python server.py
 ```
 
 ## API 说明
