@@ -21,7 +21,9 @@
         <label>
             <input type="checkbox" id="speakerVerification"> Speaker Verification
         </label>
-        <p id="transcriptionResult">Transcription result will be displayed here.</p>
+        <hr />
+        Transcription result will be displayed below:
+        <p id="transcriptionResult"></p>
     </div>
 </body>
 <script>
@@ -64,11 +66,12 @@
         ws.onmessage = function(evt) {
             console.log('Received message: ' + evt.data);
             try {
-                var jsonResponse = JSON.stringify(JSON.parse(evt.data), null, 4);
-                transcriptionResult.textContent += jsonResponse || 'No speech recognized';
+                resJson = JSON.parse(evt.data)
+                var jsonResponse = JSON.stringify(resJson, null, 4);
+                transcriptionResult.textContent += "\n" + (resJson.data || 'No speech recognized');
             } catch (e) {
                 console.error('Failed to parse response data', e);
-                transcriptionResult.textContent += evt.data;
+                transcriptionResult.textContent += "\n" + evt.data;
             }
         };
 
