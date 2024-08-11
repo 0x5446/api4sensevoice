@@ -135,7 +135,7 @@ reg_spks_files = [
 - `client_wss.html`
 - Change `wsUrl` to your own WebSocket server address to test
 ```javascript
-const wsUrl = `wss://127.0.0.1:27000/ws/transcribe?sv=${svEnabled}`; // change to your websocket server address
+ws = new WebSocket(`wss://your_server_address/ws/transcribe${sv ? '?sv=1' : ''}`);
 ```
 
 ## Roadmap

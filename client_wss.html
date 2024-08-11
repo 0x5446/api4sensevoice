@@ -1,131 +1,199 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Audio Transcription Test</title>
+    <meta charset="utf-8">
+    <title>WebSocket Audio Transcription</title>
+    <style>
+        #transcriptionResult {
+            white-space: pre-wrap; /* Preserve whitespace and line breaks */
+            background-color: #f5f5f5;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+    </style>
 </head>
 <body>
-    <h1>Audio Transcription Test Page</h1>
-    <label for="audio-file">Select Audio File:</label>
-    <input type="file" id="audio-file" accept="audio/*">
-    <br><br>
-    <label for="sv">Enable Speaker Verification (SV):</label>
-    <input type="checkbox" id="sv">
-    <br><br>
-    <button onclick="startTranscription()">Start Transcription</button>
-    <button onclick="startRecording()">Start Recording</button>
-    <button onclick="stopRecording()">Stop Recording</button>
-    <br><br>
-    <h2>Transcription Result:</h2>
-    <pre id="result"></pre>
-
-    <script>
-        let websocket;
-        let mediaRecorder;
-        let audioChunks = [];
-        const audioFileInput = document.getElementById('audio-file');
-        const svCheckbox = document.getElementById('sv');
-        const resultElement = document.getElementById('result');
-
-        async function startTranscription() {
-            if (!audioFileInput.files[0]) {
-                alert("Please select an audio file!");
-                return;
-            }
-
-            const svEnabled = svCheckbox.checked;
-            const wsUrl = `wss://your_server_address/ws/transcribe?sv=${svEnabled}`;
-
-            websocket = new WebSocket(wsUrl);
-
-            websocket.onopen = async () => {
-                const audioBlob = audioFileInput.files[0];
-                const arrayBuffer = await audioBlob.arrayBuffer();
-                const chunkSize = 1024; // 1KB
-
-                for (let i = 0; i < arrayBuffer.byteLength; i += chunkSize) {
-                    const chunk = arrayBuffer.slice(i, i + chunkSize);
-                    websocket.send(chunk);
-                }
-            };
-
-            websocket.onmessage = (event) => {
-                const response = JSON.parse(event.data);
-                if (response.code === 0) {
-                    resultElement.textContent += response.data + "\n";
-                } else {
-                    resultElement.textContent += "Error: " + response.msg + "\n";
-                }
-            };
-
-            websocket.onerror = (error) => {
-                console.error("WebSocket Error: ", error);
-                resultElement.textContent += "WebSocket Error: " + error.message + "\n";
-            };
-
-            websocket.onclose = () => {
-                console.log("WebSocket connection closed");
-            };
-        }
-
-        async function startRecording() {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                alert("Your browser does not support audio recording");
-                return;
-            }
-
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            audioChunks = [];
-
-            mediaRecorder.ondataavailable = (event) => {
-                audioChunks.push(event.data);
-            };
-
-            mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                const arrayBuffer = await audioBlob.arrayBuffer();
-                const svEnabled = svCheckbox.checked;
-                const wsUrl = `wss://127.0.0.1:27000/ws/transcribe?sv=${svEnabled}`; // change to your websocket server address
-
-                websocket = new WebSocket(wsUrl);
-
-                websocket.onopen = async () => {
-                    const chunkSize = 1024; // 1KB
-
-                    for (let i = 0; i < arrayBuffer.byteLength; i += chunkSize) {
-                        const chunk = arrayBuffer.slice(i, i + chunkSize);
-                        websocket.send(chunk);
-                    }
-                };
-
-                websocket.onmessage = (event) => {
-                    const response = JSON.parse(event.data);
-                    if (response.code === 0) {
-                        resultElement.textContent += response.data + "\n";
-                    } else {
-                        resultElement.textContent += "Error: " + response.msg + "\n";
-                    }
-                };
-
-                websocket.onerror = (error) => {
-                    console.error("WebSocket Error: ", error);
-                    resultElement.textContent += "WebSocket Error: " + error.message + "\n";
-                };
-
-                websocket.onclose = () => {
-                    console.log("WebSocket connection closed");
-                };
-            };
-
-            mediaRecorder.start();
-        }
-
-        function stopRecording() {
-            if (mediaRecorder) {
-                mediaRecorder.stop();
-            }
-        }
-    </script>
+    <div>
+        <button id="startRecording">Start Recording</button>
+        <button id="stopRecording">Stop Recording</button>
+        <label>
+            <input type="checkbox" id="speakerVerification"> Speaker Verification
+        </label>
+        <p id="transcriptionResult">Transcription result will be displayed here.</p>
+    </div>
 </body>
+<script>
+    var startButton = document.getElementById('startRecording');
+    var stopButton = document.getElementById('stopRecording');
+    var speakerVerificationCheckbox = document.getElementById('speakerVerification');
+    var transcriptionResult = document.getElementById('transcriptionResult');
+    navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia;
+    var ws = null;
+    var record = null;
+    var timeInte = null;
+
+    startButton.onclick = function() {
+        console.log('Start Recording');
+        var sv = speakerVerificationCheckbox.checked ? 1 : 0;
+        ws = new WebSocket(`wss://your_server_address/ws/transcribe${sv ? '?sv=1' : ''}`);
+        ws.binaryType = 'arraybuffer';
+
+        ws.onopen = function(event) {
+            console.log('WebSocket connection established');
+            record.start();
+            timeInte = setInterval(function() {
+                if(ws.readyState === 1) {
+                    var audioBlob = record.getBlob();
+                    console.log('Blob size: ', audioBlob.size);
+
+                    // Read the Blob content for debugging
+                    var reader = new FileReader();
+                    reader.onloadend = function() {
+                        console.log('Blob content: ', new Uint8Array(reader.result));
+                        ws.send(audioBlob);
+                        console.log('Sending audio data');
+                        record.clear();
+                    };
+                    reader.readAsArrayBuffer(audioBlob);
+                }
+            }, 500);
+        };
+
+        ws.onmessage = function(evt) {
+            console.log('Received message: ' + evt.data);
+            try {
+                var jsonResponse = JSON.stringify(JSON.parse(evt.data), null, 4);
+                transcriptionResult.textContent += jsonResponse || 'No speech recognized';
+            } catch (e) {
+                console.error('Failed to parse response data', e);
+                transcriptionResult.textContent += evt.data;
+            }
+        };
+
+        ws.onclose = function() {
+            console.log('WebSocket connection closed');
+        };
+
+        ws.onerror = function(error) {
+            console.error('WebSocket error: ' + error);
+        };
+    };
+
+    stopButton.onclick = function() {
+        console.log('Stop Recording');
+        if (ws) {
+            ws.close();
+            record.stop();
+            clearInterval(timeInte);
+        }
+    };
+
+    function init(rec) {
+        record = rec;
+    }
+
+    if (!navigator.getUserMedia) {
+        alert('Your browser does not support audio input');
+    } else {
+        navigator.getUserMedia(
+            { audio: true },
+            function(mediaStream) {
+                init(new Recorder(mediaStream));
+            },
+            function(error) {
+                console.log(error);
+            }
+        );
+    }
+
+    var Recorder = function(stream) {
+        var sampleBits = 16; // Sample bits
+        var inputSampleRate = 48000; // Input sample rate
+        var outputSampleRate = 16000; // Output sample rate
+        var channelCount = 1; // Single channel
+        var context = new AudioContext();
+        var audioInput = context.createMediaStreamSource(stream);
+        var recorder = context.createScriptProcessor(4096, channelCount, channelCount);
+        var audioData = {
+            size: 0,
+            buffer: [],
+            inputSampleRate: inputSampleRate,
+            inputSampleBits: sampleBits,
+            clear: function() {
+                this.buffer = [];
+                this.size = 0;
+            },
+            input: function(data) {
+                this.buffer.push(new Float32Array(data));
+                this.size += data.length;
+            },
+            encodePCM: function() {
+                var bytes = new Float32Array(this.size);
+                var offset = 0;
+                for (var i = 0; i < this.buffer.length; i++) {
+                    bytes.set(this.buffer[i], offset);
+                    offset += this.buffer[i].length;
+                }
+                var dataLength = bytes.length * (sampleBits / 8);
+                var buffer = new ArrayBuffer(dataLength);
+                var data = new DataView(buffer);
+                offset = 0;
+                for (var i = 0; i < bytes.length; i++, offset += 2) {
+                    var s = Math.max(-1, Math.min(1, bytes[i]));
+                    data.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                }
+                return new Blob([data], { type: 'audio/pcm' });
+            }
+        };
+
+        this.start = function() {
+            audioInput.connect(recorder);
+            recorder.connect(context.destination);
+        };
+
+        this.stop = function() {
+            recorder.disconnect();
+        };
+
+        this.getBlob = function() {
+            return audioData.encodePCM();
+        };
+
+        this.clear = function() {
+            audioData.clear();
+        };
+
+        function downsampleBuffer(buffer, inputSampleRate, outputSampleRate) {
+            if (outputSampleRate === inputSampleRate) {
+                return buffer;
+            }
+            var sampleRateRatio = inputSampleRate / outputSampleRate;
+            var newLength = Math.round(buffer.length / sampleRateRatio);
+            var result = new Float32Array(newLength);
+            var offsetResult = 0;
+            var offsetBuffer = 0;
+            while (offsetResult < result.length) {
+                var nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+                var accum = 0, count = 0;
+                for (var i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+                    accum += buffer[i];
+                    count++;
+                }
+                result[offsetResult] = accum / count;
+                offsetResult++;
+                offsetBuffer = nextOffsetBuffer;
+            }
+            return result;
+        }
+
+        recorder.onaudioprocess = function(e) {
+            console.log('onaudioprocess called');
+            var resampledData = downsampleBuffer(e.inputBuffer.getChannelData(0), inputSampleRate, outputSampleRate);
+            audioData.input(resampledData);
+        };
+    };
+
+</script>
 </html>
