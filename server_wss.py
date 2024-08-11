@@ -168,7 +168,7 @@ model = AutoModel(
 )
 
 reg_spks_files = [
-    "audio_sample/tf.wav"
+    "speaker/speaker1_a_cn_16k.wav"
 ]
 
 def reg_spk_init(files):
