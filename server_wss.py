@@ -22,7 +22,7 @@ from modelscope.utils.constant import Tasks
 
 class Config(BaseSettings):
     sv_thr: float = Field(0.29, description="Speaker verification threshold")
-    chunk_size_ms: int = Field(50, description="Chunk size in milliseconds")
+    chunk_size_ms: int = Field(100, description="Chunk size in milliseconds")
     sample_rate: int = Field(16000, description="Sample rate in Hz")
     bit_depth: int = Field(16, description="Bit depth")
     channels: int = Field(1, description="Number of audio channels")
