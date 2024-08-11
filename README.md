@@ -1,6 +1,6 @@
-# SenseVoice API Server
+API and websocket server for sensevoice
 
-API and websocket server for sensevoice. It has inherited some enhanced features, such as VAD detection, real-time streaming recognition, and speaker verification.
+It has inherited some enhanced features, such as VAD detection, real-time streaming recognition, and speaker verification.
 
 ## 安装
 
@@ -63,7 +63,7 @@ python server.py --port 8888 --certfile /etc/perm/your_domain_bundle.crt --keyfi
     - **Schema**:
       - `detail` (array): 错误详情数组
 
-请求示例:
+- **请求示例**:
 
 ```bash
 curl -X 'POST'  
@@ -73,7 +73,7 @@ curl -X 'POST'
   -F 'file=@path_to_your_audio_file'
 ```
 
-响应示例（200 成功响应）:
+- **响应示例**（200 成功响应）:
 
 ```json
 {
@@ -140,7 +140,7 @@ const wsUrl = `wss://127.0.0.1:27000/ws/transcribe?sv=${svEnabled}`; // change t
 - [x]  一句话识别（适合一小段语音）
 - [x]  流式实时识别
 - [x]  流式实时识别支持说话人验证
-- [x]  延时优化
+- [ ]  延时优化
 
 ## 贡献
 
