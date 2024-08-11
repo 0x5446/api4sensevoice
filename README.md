@@ -1,6 +1,9 @@
 ## real-time streaming sensevoice with speaker verification
 
-It has inherited some enhanced features, such as **VAD detection**, **real-time streaming recognition**, and **speaker verification**.
+It has inherited some enhanced features for sensevoice:
+- **VAD detection**
+- **real-time streaming recognition**
+- **speaker verification**.
 
 ## Installation
 
