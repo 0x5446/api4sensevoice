@@ -1,6 +1,6 @@
 ## API and websocket server for sensevoice
 
-It has inherited some enhanced features, such as VAD detection, real-time streaming recognition, and speaker verification.
+It has inherited some enhanced features, such as **VAD detection**, **real-time streaming recognition**, and **speaker verification**.
 
 ## Installation
 
