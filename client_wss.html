@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Audio Transcription Test</title>
+</head>
+<body>
+    <h1>Audio Transcription Test Page</h1>
+    <label for="audio-file">Select Audio File:</label>
+    <input type="file" id="audio-file" accept="audio/*">
+    <br><br>
+    <label for="sv">Enable Speaker Verification (SV):</label>
+    <input type="checkbox" id="sv">
+    <br><br>
+    <button onclick="startTranscription()">Start Transcription</button>
+    <button onclick="startRecording()">Start Recording</button>
+    <button onclick="stopRecording()">Stop Recording</button>
+    <br><br>
+    <h2>Transcription Result:</h2>
+    <pre id="result"></pre>
+
+    <script>
+        let websocket;
+        let mediaRecorder;
+        let audioChunks = [];
+        const audioFileInput = document.getElementById('audio-file');
+        const svCheckbox = document.getElementById('sv');
+        const resultElement = document.getElementById('result');
+
+        async function startTranscription() {
+            if (!audioFileInput.files[0]) {
+                alert("Please select an audio file!");
+                return;
+            }
+
+            const svEnabled = svCheckbox.checked;
+            const wsUrl = `wss://your_server_address/ws/transcribe?sv=${svEnabled}`;
+
+            websocket = new WebSocket(wsUrl);
+
+            websocket.onopen = async () => {
+                const audioBlob = audioFileInput.files[0];
+                const arrayBuffer = await audioBlob.arrayBuffer();
+                const chunkSize = 1024; // 1KB
+
+                for (let i = 0; i < arrayBuffer.byteLength; i += chunkSize) {
+                    const chunk = arrayBuffer.slice(i, i + chunkSize);
+                    websocket.send(chunk);
+                }
+            };
+
+            websocket.onmessage = (event) => {
+                const response = JSON.parse(event.data);
+                if (response.code === 0) {
+                    resultElement.textContent += response.data + "\n";
+                } else {
+                    resultElement.textContent += "Error: " + response.msg + "\n";
+                }
+            };
+
+            websocket.onerror = (error) => {
+                console.error("WebSocket Error: ", error);
+                resultElement.textContent += "WebSocket Error: " + error.message + "\n";
+            };
+
+            websocket.onclose = () => {
+                console.log("WebSocket connection closed");
+            };
+        }
+
+        async function startRecording() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert("Your browser does not support audio recording");
+                return;
+            }
+
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const arrayBuffer = await audioBlob.arrayBuffer();
+                const svEnabled = svCheckbox.checked;
+                const wsUrl = `wss://127.0.0.1:27000/ws/transcribe?sv=${svEnabled}`; // change to your websocket server address
+
+                websocket = new WebSocket(wsUrl);
+
+                websocket.onopen = async () => {
+                    const chunkSize = 1024; // 1KB
+
+                    for (let i = 0; i < arrayBuffer.byteLength; i += chunkSize) {
+                        const chunk = arrayBuffer.slice(i, i + chunkSize);
+                        websocket.send(chunk);
+                    }
+                };
+
+                websocket.onmessage = (event) => {
+                    const response = JSON.parse(event.data);
+                    if (response.code === 0) {
+                        resultElement.textContent += response.data + "\n";
+                    } else {
+                        resultElement.textContent += "Error: " + response.msg + "\n";
+                    }
+                };
+
+                websocket.onerror = (error) => {
+                    console.error("WebSocket Error: ", error);
+                    resultElement.textContent += "WebSocket Error: " + error.message + "\n";
+                };
+
+                websocket.onclose = () => {
+                    console.log("WebSocket connection closed");
+                };
+            };
+
+            mediaRecorder.start();
+        }
+
+        function stopRecording() {
+            if (mediaRecorder) {
+                mediaRecorder.stop();
+            }
+        }
+    </script>
+</body>
+</html>
