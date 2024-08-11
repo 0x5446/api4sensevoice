@@ -121,7 +121,7 @@ reg_spks_files = [
   - channel number: 1
   - sample rate: 16000
   - sample deepth: 16bit
-- Downstream data: String
+- Downstream data: Json String
   - Schema:
     - `code` (integer): state number
     - `msg` (string): meta message
@@ -156,6 +156,6 @@ All forms of contributions are welcome, including but not limited to:
 This project is licensed under the [MIT License](https://opensource.org/license/mit). See the LICENSE file for details.
 
 ## Dependencies
-[https://github.com/FunAudioLLM/SenseVoice](https://github.com/FunAudioLLM/SenseVoice)
-[https://modelscope.cn/models/iic/speech_campplus_sv_zh_en_16k-common_advanced](https://modelscope.cn/models/iic/speech_campplus_sv_zh_en_16k-common_advanced)
-[https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch)
+- [https://github.com/FunAudioLLM/SenseVoice](https://github.com/FunAudioLLM/SenseVoice)
+- [https://modelscope.cn/models/iic/speech_campplus_sv_zh_en_16k-common_advanced](https://modelscope.cn/models/iic/speech_campplus_sv_zh_en_16k-common_advanced)
+- [https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch)
