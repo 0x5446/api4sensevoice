@@ -138,7 +138,7 @@ reg_spks_files = [
 const wsUrl = `wss://127.0.0.1:27000/ws/transcribe?sv=${svEnabled}`; // change to your websocket server address
 ```
 
-## 计划
+## Roadmap
 
 - [x]  Single sentence recognition (suitable for short segments of speech)
 - [x]  Streaming real-time recognition
