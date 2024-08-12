@@ -12,12 +12,15 @@
             border-radius: 5px;
             font-family: monospace;
         }
+        #recordButton.recording {
+            background-color: red;
+            color: white;
+        }
     </style>
 </head>
 <body>
     <div>
-        <button id="startRecording">Start Recording</button>
-        <button id="stopRecording">Stop Recording</button>
+        <button id="recordButton">Start Recording</button>
         <label>
             language: 
             <input id="lang" type="text" value="auto" />
@@ -31,16 +34,23 @@
     </div>
 </body>
 <script>
-    var startButton = document.getElementById('startRecording');
-    var stopButton = document.getElementById('stopRecording');
-
+    var recordButton = document.getElementById('recordButton');
     var transcriptionResult = document.getElementById('transcriptionResult');
     navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia;
     var ws = null;
     var record = null;
     var timeInte = null;
+    var isRecording = false;
 
-    startButton.onclick = function() {
+    recordButton.onclick = function() {
+        if (!isRecording) {
+            startRecording();
+        } else {
+            stopRecording();
+        }
+    };
+
+    function startRecording() {
         console.log('Start Recording');
         var speakerVerificationCheckbox = document.getElementById('speakerVerification');
         var sv = speakerVerificationCheckbox.checked ? 1 : 0;
@@ -98,16 +108,23 @@
         ws.onerror = function(error) {
             console.error('WebSocket error: ' + error);
         };
-    };
 
-    stopButton.onclick = function() {
+        recordButton.textContent = "Stop Recording";
+        recordButton.classList.add("recording");
+        isRecording = true;
+    }
+
+    function stopRecording() {
         console.log('Stop Recording');
         if (ws) {
             ws.close();
             record.stop();
             clearInterval(timeInte);
         }
-    };
+        recordButton.textContent = "Start Recording";
+        recordButton.classList.remove("recording");
+        isRecording = false;
+    }
 
     function init(rec) {
         record = rec;

@@ -319,7 +319,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the FastAPI app with a specified port.")
-    parser.add_argument('--port', type=int, default=37000, help='Port number to run the FastAPI app on.')
+    parser.add_argument('--port', type=int, default=27000, help='Port number to run the FastAPI app on.')
     parser.add_argument('--certfile', type=str, default='path_to_your_certfile', help='SSL certificate file')
     parser.add_argument('--keyfile', type=str, default='path_to_your_keyfile', help='SSL key file')
     args = parser.parse_args()
