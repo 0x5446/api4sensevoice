@@ -163,6 +163,8 @@ model = AutoModel(
     model="fsmn-vad",
     model_revision="v2.0.4",
     disable_pbar = True,
+    max_end_silence_time=200,
+    speech_noise_thres=0.8
 )
 
 reg_spks_files = [
@@ -183,10 +185,10 @@ def reg_spk_init(files):
 reg_spks = reg_spk_init(reg_spks_files)
 
 
-def process_vad_audio(audio, sv=True):
+def process_vad_audio(audio, sv=True, lang="auto"):
     logger.debug(f"[process_vad_audio] process audio(length: {len(audio)})")
     if not sv:
-        return asr_pipeline(audio)
+        return asr_pipeline(audio, language=lang.strip())
     
     hit = False
     for k, v in reg_spks.items():
@@ -195,7 +197,7 @@ def process_vad_audio(audio, sv=True):
         if res_sv["score"] >= config.sv_thr:
             hit = True
 
-    return asr_pipeline(audio) if hit else None
+    return asr_pipeline(audio, language=lang.strip()) if hit else None
             
 
 
@@ -251,6 +253,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
         query_params = parse_qs(websocket.scope['query_string'].decode())
         sv = query_params.get('sv', ['false'])[0].lower() in ['true', '1', 't', 'y', 'yes']
+        lang = query_params.get('lang', ['auto'])[0].lower()
         
         await websocket.accept()
         chunk_size = int(config.chunk_size_ms * config.sample_rate * config.channels * (config.bit_depth // 8) / 1000)
@@ -290,7 +293,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             offset += last_vad_end
                             beg = int(last_vad_beg * config.sample_rate / 1000)
                             end = int(last_vad_end * config.sample_rate / 1000)
-                            result = process_vad_audio(audio_vad[beg:end], sv) # todo: async
+                            result = process_vad_audio(audio_vad[beg:end], sv, lang) # todo: async
                             logger.debug(f"[process_vad_audio] {result}")
                             audio_vad = audio_vad[end:]
                             last_vad_beg = last_vad_end = -1
@@ -306,8 +309,8 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.info("WebSocket disconnected")
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
-    finally:
         await websocket.close()
+    finally:
         audio_buffer = np.array([])
         audio_vad = np.array([])
         cache.clear()
@@ -316,7 +319,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the FastAPI app with a specified port.")
-    parser.add_argument('--port', type=int, default=27000, help='Port number to run the FastAPI app on.')
+    parser.add_argument('--port', type=int, default=37000, help='Port number to run the FastAPI app on.')
     parser.add_argument('--certfile', type=str, default='path_to_your_certfile', help='SSL certificate file')
     parser.add_argument('--keyfile', type=str, default='path_to_your_keyfile', help='SSL key file')
     args = parser.parse_args()

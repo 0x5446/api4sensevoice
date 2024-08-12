@@ -19,6 +19,10 @@
         <button id="startRecording">Start Recording</button>
         <button id="stopRecording">Stop Recording</button>
         <label>
+            language: 
+            <input id="lang" type="text" value="auto" />
+        </label>
+        <label>
             <input type="checkbox" id="speakerVerification"> Speaker Verification
         </label>
         <hr />
@@ -29,7 +33,7 @@
 <script>
     var startButton = document.getElementById('startRecording');
     var stopButton = document.getElementById('stopRecording');
-    var speakerVerificationCheckbox = document.getElementById('speakerVerification');
+
     var transcriptionResult = document.getElementById('transcriptionResult');
     navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia;
     var ws = null;
@@ -38,8 +42,20 @@
 
     startButton.onclick = function() {
         console.log('Start Recording');
+        var speakerVerificationCheckbox = document.getElementById('speakerVerification');
         var sv = speakerVerificationCheckbox.checked ? 1 : 0;
-        ws = new WebSocket(`wss://your_server_address/ws/transcribe${sv ? '?sv=1' : ''}`);
+        var lang = document.getElementById("lang").value
+        // Construct the query parameters
+        var queryParams = [];
+        if (lang) {
+            queryParams.push(`lang=${lang}`);
+        }
+        if (sv) {
+            queryParams.push('sv=1');
+        }
+        var queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+
+        ws = new WebSocket(`wss://your_server_address/ws/transcribe${queryString}`);
         ws.binaryType = 'arraybuffer';
 
         ws.onopen = function(event) {
