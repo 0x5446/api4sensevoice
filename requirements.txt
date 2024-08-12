@@ -1,0 +1,11 @@
+fastapi==0.112.0
+funasr==1.1.4
+modelscope==1.17.1
+numpy==2.0.1
+pydantic==2.8.2
+pydantic_settings==2.4.0
+soundfile==0.12.1
+starlette==0.38.2
+torch==2.3.1
+torchaudio==2.3.1
+uvicorn==0.30.5
