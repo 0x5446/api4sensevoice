@@ -9,6 +9,7 @@ It has inherited some enhanced features for sensevoice:
 
 First, clone this repository to your local machine:
 
+```bash
 git clone https://github.com/0x5446/api4sensevoice.git
 cd api4sensevoice
 ```
