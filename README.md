@@ -44,7 +44,7 @@ The above code is from the end of server.py. You can modify it to define the por
 You can also set these through command-line arguments, for example:
 
 ```bash
-python server.py --port 8888 --certfile /etc/perm/your_domain_bundle.crt --keyfile /etc/perm/your_domain.key
+python server.py --port 8888 --certfile path_to_your_certfile --keyfile path_to_your_key
 ```
 
 #### API Description
@@ -106,7 +106,7 @@ The above code is from the end of server_wss.py. You can modify it to define the
 You can also set these through command-line arguments, for example:
 
 ```bash
-python server_wss.py --port 8888 --certfile /etc/perm/your_domain_bundle.crt --keyfile /etc/perm/your_domain.key
+python server_wss.py --port 8888 --certfile path_to_your_certfile --keyfile path_to_your_key
 ```
 
 If you want to enable speaker verification:
