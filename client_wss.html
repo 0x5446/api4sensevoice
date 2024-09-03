@@ -65,7 +65,7 @@
         }
         var queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
 
-        ws = new WebSocket(`ws://labs.makee.com:27000/ws/transcribe${queryString}`);
+        ws = new WebSocket(`ws://lab.wakabot.com:27000/ws/transcribe${queryString}`);
         ws.binaryType = 'arraybuffer';
 
         ws.onopen = function(event) {
