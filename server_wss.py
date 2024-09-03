@@ -21,7 +21,7 @@ from modelscope.utils.constant import Tasks
 
 
 class Config(BaseSettings):
-    sv_thr: float = Field(0.29, description="Speaker verification threshold")
+    sv_thr: float = Field(0.2, description="Speaker verification threshold")
     chunk_size_ms: int = Field(100, description="Chunk size in milliseconds")
     sample_rate: int = Field(16000, description="Sample rate in Hz")
     bit_depth: int = Field(16, description="Bit depth")
@@ -156,6 +156,9 @@ asr_pipeline = pipeline(
     model='iic/SenseVoiceSmall',
     model_revision="master",
     device="cuda:0",
+    use_itn=True,
+    disable_update=True,
+    remote_code="./model.py",
 )
 
 
@@ -164,11 +167,12 @@ model = AutoModel(
     model_revision="v2.0.4",
     disable_pbar = True,
     max_end_silence_time=200,
-    speech_noise_thres=0.8
+    speech_noise_thres=0.8,
+    disable_update=True,
 )
 
 reg_spks_files = [
-    "speaker/speaker1_a_cn_16k.wav"
+    "speaker/speaker_tf_16k.wav"
 ]
 
 def reg_spk_init(files):
@@ -266,7 +270,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
         while True:
             data = await websocket.receive_bytes()
-            logger.debug(f"received {len(data)} bytes")
+            #logger.debug(f"received {len(data)} bytes")
 
             audio_buffer = np.append(audio_buffer, np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0)
             
@@ -278,7 +282,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 #with open("debug.pcm", "ab") as f:
                     #f.write(np.int16(chunk * 32767).tobytes())
                 res = model.generate(input=chunk, cache=cache, is_final=False, chunk_size=config.chunk_size_ms)
-                logger.debug(f"vad inference: {res}")
+                #logger.debug(f"vad inference: {res}")
                 if len(res[0]["value"]):
                     vad_segments = res[0]["value"]
                     for segment in vad_segments:
@@ -320,8 +324,9 @@ async def websocket_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the FastAPI app with a specified port.")
     parser.add_argument('--port', type=int, default=27000, help='Port number to run the FastAPI app on.')
-    parser.add_argument('--certfile', type=str, default='path_to_your_certfile', help='SSL certificate file')
-    parser.add_argument('--keyfile', type=str, default='path_to_your_keyfile', help='SSL key file')
+    #parser.add_argument('--certfile', type=str, default='/etc/perm/labs.makee.com_bundle.crt', help='SSL certificate file')
+    #parser.add_argument('--keyfile', type=str, default='/etc/perm/labs.makee.com.key', help='SSL key file')
     args = parser.parse_args()
 
-    uvicorn.run(app, host="0.0.0.0", port=args.port, ssl_certfile=args.certfile, ssl_keyfile=args.keyfile)
+    #uvicorn.run(app, host="0.0.0.0", port=args.port, ssl_certfile=args.certfile, ssl_keyfile=args.keyfile)
+    uvicorn.run(app, host="0.0.0.0", port=args.port)
