@@ -894,13 +894,13 @@ class SenseVoiceSmall(nn.Module):
 
             mask = yseq != self.blank_id
             token_int = yseq[mask].tolist()
-            
-            # 计算所有logprob的平均值
-            avg_logprob = x.max(dim=-1)[0].mean().item()
 
             # Change integer-ids to tokens
             text = tokenizer.decode(token_int)
-
+            
+            # 计算所有logprob的平均值
+            avg_logprob = x.max(dim=-1)[0].mean().item()
+            
             result_i = {"key": key[i], "text": text, "avg_logprob": avg_logprob}
             results.append(result_i)
 
