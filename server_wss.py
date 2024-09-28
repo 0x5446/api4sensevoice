@@ -1,7 +1,3 @@
-import logging
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -16,16 +12,20 @@ import argparse
 import uvicorn
 from urllib.parse import parse_qs
 import os
+import re
 from modelscope.pipelines import pipeline
-from modelscope.utils.constant import Tasks
+from custom_logger import setup_custom_logger
+
+logger = setup_custom_logger()
 
 
 class Config(BaseSettings):
-    sv_thr: float = Field(0.2, description="Speaker verification threshold")
-    chunk_size_ms: int = Field(100, description="Chunk size in milliseconds")
+    sv_thr: float = Field(0.25, description="Speaker verification threshold")
+    chunk_size_ms: int = Field(300, description="Chunk size in milliseconds")
     sample_rate: int = Field(16000, description="Sample rate in Hz")
     bit_depth: int = Field(16, description="Bit depth")
     channels: int = Field(1, description="Number of audio channels")
+    avg_logprob_thr: float = Field(-0.2, description="average logprob threshold")
 
 config = Config()
 
@@ -144,29 +144,30 @@ def format_str_v3(s):
 	new_s = new_s.replace("The.", " ")
 	return new_s.strip()
 
+def contains_chinese_english_number(s: str) -> bool:
+    # Check if the string contains any Chinese character, English letter, or Arabic number
+    return bool(re.search(r'[\u4e00-\u9fffA-Za-z0-9]', s))
+
 
 sv_pipeline = pipeline(
     task='speaker-verification',
-    model='iic/speech_campplus_sv_zh_en_16k-common_advanced',
-    model_revision='v1.0.0'
+    model='iic/speech_eres2netv2w24s4ep4_sv_zh-cn_16k-common',
+    model_revision='v1.0.1'
 )
 
-asr_pipeline = pipeline(
-    task=Tasks.auto_speech_recognition,
-    model='iic/SenseVoiceSmall',
-    model_revision="master",
+model_asr = AutoModel(
+    model="iic/SenseVoiceSmall",
+    trust_remote_code=True,
+    remote_code="./model.py",    
     device="cuda:0",
-    use_itn=True,
-    disable_update=True,
-    remote_code="./model.py",
+    disable_update=True
 )
 
-
-model = AutoModel(
+model_vad = AutoModel(
     model="fsmn-vad",
     model_revision="v2.0.4",
     disable_pbar = True,
-    max_end_silence_time=200,
+    max_end_silence_time=400,
     speech_noise_thres=0.8,
     disable_update=True,
 )
@@ -188,26 +189,17 @@ def reg_spk_init(files):
 
 reg_spks = reg_spk_init(reg_spks_files)
 
-
-def process_vad_audio(audio, sv=True, lang="auto"):
-    logger.debug(f"[process_vad_audio] process audio(length: {len(audio)})")
-    if not sv:
-        return asr_pipeline(audio, language=lang.strip())
-    
+def speaker_verify(audio, sv_thr):
     hit = False
     for k, v in reg_spks.items():
-        res_sv = sv_pipeline([audio, v["data"]], thr=config.sv_thr)
-        logger.debug(f"[speaker check] {k}: {res_sv}")
-        if res_sv["score"] >= config.sv_thr:
-            hit = True
-
-    return asr_pipeline(audio, language=lang.strip()) if hit else None
-            
-
+        res_sv = sv_pipeline([audio, v["data"]], sv_thr)
+        logger.info(f"[speaker check] {k}: {res_sv}")
+        if res_sv["score"] >= sv_thr:
+           hit = True
+    return hit, k
 
 app = FastAPI()
 
-# 设置跨域中间件
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -215,7 +207,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 @app.exception_handler(Exception)
 async def custom_exception_handler(request: Request, exc: Exception):
@@ -242,13 +233,11 @@ async def custom_exception_handler(request: Request, exc: Exception):
         ).model_dump()
     )
 
-
 # Define the response model
 class TranscriptionResponse(BaseModel):
     code: int
     msg: str
     data: str
-
 
 @app.websocket("/ws/transcribe")
 async def websocket_endpoint(websocket: WebSocket):
@@ -260,63 +249,105 @@ async def websocket_endpoint(websocket: WebSocket):
         lang = query_params.get('lang', ['auto'])[0].lower()
         
         await websocket.accept()
-        chunk_size = int(config.chunk_size_ms * config.sample_rate * config.channels * (config.bit_depth // 8) / 1000)
+        chunk_size = int(config.chunk_size_ms * config.sample_rate / 1000)
+        audio_buffer = np.array([], dtype=np.float32)
+        audio_vad = np.array([], dtype=np.float32)
         
-        audio_buffer = np.array([])
-        audio_vad = np.array([])
+        if sv:
+            sv_audio_buffer = np.array([], dtype=np.float32)
+
         cache = {}
         last_vad_beg = last_vad_end = -1
         offset = 0
+        hit = False
 
         while True:
             data = await websocket.receive_bytes()
-            #logger.debug(f"received {len(data)} bytes")
-
-            audio_buffer = np.append(audio_buffer, np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0)
-            
+            #logger.info(f"received {len(data)} bytes")                
+            audio_buffer = np.append(audio_buffer, np.frombuffer(data, dtype=np.float32))
+                
             while len(audio_buffer) >= chunk_size:
                 chunk = audio_buffer[:chunk_size]
                 audio_buffer = audio_buffer[chunk_size:]
-                    
+                
+                if last_vad_beg > 1 and sv:
+                    # speaker verify
+                    # If no hit is detected, continue accumulating audio data and check again until a hit is detected
+                    # the `hit`、`sv_audio_buffer` will reset after `model_asr.generate`).
+                    if not hit:
+                        sv_audio_buffer = np.append(sv_audio_buffer, chunk)
+                        hit, speaker = speaker_verify(sv_audio_buffer, config.sv_thr)
+                        if hit:
+                            response = TranscriptionResponse(
+                                code=2,
+                                msg="detect speaker",
+                                data=speaker
+                            )
+                            await websocket.send_json(response.model_dump())
+                            sv_audio_buffer = np.array([], dtype=np.float32)
+                
                 audio_vad = np.append(audio_vad, chunk)
-                #with open("debug.pcm", "ab") as f:
-                    #f.write(np.int16(chunk * 32767).tobytes())
-                res = model.generate(input=chunk, cache=cache, is_final=False, chunk_size=config.chunk_size_ms)
-                #logger.debug(f"vad inference: {res}")
+
+                res = model_vad.generate(input=chunk, cache=cache, is_final=False, chunk_size=config.chunk_size_ms)
+                #logger.info(f"vad inference: {res}")
                 if len(res[0]["value"]):
                     vad_segments = res[0]["value"]
                     for segment in vad_segments:
                         if segment[0] > -1: # speech begin
                             last_vad_beg = segment[0]
+
+                            
                         if segment[1] > -1: # speech end
                             last_vad_end = segment[1]
+
                         if last_vad_beg > -1 and last_vad_end > -1:
-                            logger.debug(f"vad segment: {[last_vad_beg, last_vad_end]}")
+                            logger.info(f"vad segment: {[last_vad_beg, last_vad_end]}")
                             last_vad_beg -= offset
                             last_vad_end -= offset
                             offset += last_vad_end
                             beg = int(last_vad_beg * config.sample_rate / 1000)
                             end = int(last_vad_end * config.sample_rate / 1000)
-                            result = process_vad_audio(audio_vad[beg:end], sv, lang) # todo: async
-                            logger.debug(f"[process_vad_audio] {result}")
+                            result = model_asr.generate(
+                                input       = audio_vad[beg:end],
+                                cache       = {},
+                                language    = lang.strip(),
+                                use_itn     = True,
+                                batch_size_s= 60,
+                            ) if hit else None
+                            logger.info(f"model_asr.generate {result}")
                             audio_vad = audio_vad[end:]
                             last_vad_beg = last_vad_end = -1
                             
+                            if sv:
+                                # reset `hit`
+                                hit = False
+                                # reset `sv_audio_buffer`
+                                sv_audio_buffer = np.array([], dtype=np.float32)
+                            
                             if  result is not None:
-                                response = TranscriptionResponse(
-                                    code=0,
-                                    msg=f"success",
-                                    data=format_str_v3(result[0]['text'])
-                                )
-                                await websocket.send_json(response.model_dump())
+                                if result[0]['avg_logprob'] < config.avg_logprob_thr:
+                                    data = '...'
+                                    logger.info(f'avg_logprob < {config.avg_logprob_thr}, so output ...')
+                                else:
+                                    data = format_str_v3(result[0]['text'])
+                                
+                                if data == '...' or contains_chinese_english_number(data):
+                                    response = TranscriptionResponse(
+                                        code=0,
+                                        msg=f"success",
+                                        data=data
+                                    )
+                                    await websocket.send_json(response.model_dump())
+
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
         await websocket.close()
     finally:
-        audio_buffer = np.array([])
-        audio_vad = np.array([])
+        audio_buffer = np.array([], dtype=np.float32)
+        audio_vad = np.array([], dtype=np.float32)
+        sv_audio_buffer = np.array([], dtype=np.float32)
         cache.clear()
         logger.info("Cleaned up resources after WebSocket disconnect")
 
@@ -326,7 +357,38 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=27000, help='Port number to run the FastAPI app on.')
     #parser.add_argument('--certfile', type=str, default='/etc/perm/labs.makee.com_bundle.crt', help='SSL certificate file')
     #parser.add_argument('--keyfile', type=str, default='/etc/perm/labs.makee.com.key', help='SSL key file')
-    args = parser.parse_args()
 
+    args = parser.parse_args()
+    
+    log_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "format": "%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s",
+            },
+        },
+        "handlers": {
+            "default": {
+                "level": "INFO",
+                "formatter": "default",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+            },
+        },
+        "loggers": {
+            "": {  # root logger
+                "handlers": ["default"],
+                "level": "INFO",
+                "propagate": False,
+            },
+            "uvicorn": {  # uvicorn logger
+                "handlers": ["default"],
+                "level": "INFO",
+                "propagate": False,
+            },
+        },
+    }
+    
     #uvicorn.run(app, host="0.0.0.0", port=args.port, ssl_certfile=args.certfile, ssl_keyfile=args.keyfile)
-    uvicorn.run(app, host="0.0.0.0", port=args.port)
+    uvicorn.run(app, host="0.0.0.0", port=args.port, log_config=log_config)
