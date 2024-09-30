@@ -11,7 +11,7 @@ It has inherited some enhanced features for sensevoice:
 #### 2024-09-30
 
 1. Optimized speaker verification processing by accumulating audio data to improve recognition accuracy.
-1. Added logprob to the recognition results to represent the confidence of the recognition, for use by upper-level applications.
+1. Added `logprob` to the recognition results to represent the confidence of the recognition, for use by upper-level applications.
 
 
 ## Installation
