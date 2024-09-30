@@ -5,6 +5,15 @@ It has inherited some enhanced features for sensevoice:
 - **real-time streaming recognition**
 - **speaker verification**.
 
+
+## Update Log
+
+#### 2024-09-30
+
+1. Optimized speaker verification processing by accumulating audio data to improve recognition accuracy.
+1. Added logprob to the recognition results to represent the confidence of the recognition, for use by upper-level applications.
+
+
 ## Installation
 
 First, clone this repository to your local machine:
@@ -63,7 +72,7 @@ python server.py --port 8888 --certfile path_to_your_certfile --keyfile path_to_
   - Content Type: `application/json`
   - Schema:
     - `code` (integer): state number
-    - `msg` (string): meta message
+    - `info` (string): meta info
     - `data` (object): Response object
 
 - Request Example:
@@ -132,7 +141,7 @@ reg_spks_files = [
 - Downstream data: Json String
   - Schema:
     - `code` (integer): state number
-    - `msg` (string): meta message
+    - `info` (string): meta info
     - `data` (object): Response object
 
 #### Client Testing Page
@@ -140,7 +149,7 @@ reg_spks_files = [
 - `client_wss.html`
 - Change `wsUrl` to your own WebSocket server address to test
 ```javascript
-ws = new WebSocket(`wss://your_server_address/ws/transcribe${sv ? '?sv=1' : ''}`);
+ws = new WebSocket(`wss://your_wss_server_address/ws/transcribe${sv ? '?sv=1' : ''}`);
 ```
 
 ## Roadmap
