@@ -14,9 +14,14 @@ from urllib.parse import parse_qs
 import os
 import re
 from modelscope.pipelines import pipeline
-from custom_logger import setup_custom_logger
+from loguru import logger
+import sys
+import json
 
-logger = setup_custom_logger()
+logger.remove()
+log_format = "{time:YYYY-MM-DD HH:mm:ss} [{level}] {file}:{line} - {message}"
+logger.add(sys.stdout, format=log_format, level="DEBUG", filter=lambda record: record["level"].no < 40)
+logger.add(sys.stderr, format=log_format, level="ERROR", filter=lambda record: record["level"].no >= 40)
 
 
 class Config(BaseSettings):
@@ -25,7 +30,7 @@ class Config(BaseSettings):
     sample_rate: int = Field(16000, description="Sample rate in Hz")
     bit_depth: int = Field(16, description="Bit depth")
     channels: int = Field(1, description="Number of audio channels")
-    avg_logprob_thr: float = Field(-0.2, description="average logprob threshold")
+    avg_logprob_thr: float = Field(-0.25, description="average logprob threshold")
 
 config = Config()
 
@@ -236,14 +241,12 @@ async def custom_exception_handler(request: Request, exc: Exception):
 # Define the response model
 class TranscriptionResponse(BaseModel):
     code: int
-    msg: str
+    info: str
     data: str
 
 @app.websocket("/ws/transcribe")
 async def websocket_endpoint(websocket: WebSocket):
-    
     try:
-
         query_params = parse_qs(websocket.scope['query_string'].decode())
         sv = query_params.get('sv', ['false'])[0].lower() in ['true', '1', 't', 'y', 'yes']
         lang = query_params.get('lang', ['auto'])[0].lower()
@@ -260,12 +263,23 @@ async def websocket_endpoint(websocket: WebSocket):
         last_vad_beg = last_vad_end = -1
         offset = 0
         hit = False
-
+        
+        buffer = b""
         while True:
             data = await websocket.receive_bytes()
-            #logger.info(f"received {len(data)} bytes")                
-            audio_buffer = np.append(audio_buffer, np.frombuffer(data, dtype=np.float32))
-                
+            # logger.info(f"received {len(data)} bytes")
+            
+            # with open('test.pcm', 'ab') as f:
+            #     f.write(data)
+            
+            buffer += data
+            if len(buffer) < 4:
+                continue
+                                        
+            audio_buffer = np.append(audio_buffer, np.frombuffer(buffer[:len(buffer) - (len(buffer) % 4)], dtype=np.int16))
+            audio_buffer = audio_buffer.astype(np.float32) / 32767.0
+            buffer = buffer[len(buffer) - (len(buffer) % 4):]
+   
             while len(audio_buffer) >= chunk_size:
                 chunk = audio_buffer[:chunk_size]
                 audio_buffer = audio_buffer[chunk_size:]
@@ -280,7 +294,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         if hit:
                             response = TranscriptionResponse(
                                 code=2,
-                                msg="detect speaker",
+                                info="detect speaker",
                                 data=speaker
                             )
                             await websocket.send_json(response.model_dump())
@@ -294,12 +308,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     vad_segments = res[0]["value"]
                     for segment in vad_segments:
                         if segment[0] > -1: # speech begin
-                            last_vad_beg = segment[0]
-
-                            
+                            last_vad_beg = segment[0]                           
                         if segment[1] > -1: # speech end
                             last_vad_end = segment[1]
-
                         if last_vad_beg > -1 and last_vad_end > -1:
                             logger.info(f"vad segment: {[last_vad_beg, last_vad_end]}")
                             last_vad_beg -= offset
@@ -307,13 +318,13 @@ async def websocket_endpoint(websocket: WebSocket):
                             offset += last_vad_end
                             beg = int(last_vad_beg * config.sample_rate / 1000)
                             end = int(last_vad_end * config.sample_rate / 1000)
-                            result = model_asr.generate(
+                            result = None if sv and not hit else model_asr.generate(
                                 input       = audio_vad[beg:end],
                                 cache       = {},
                                 language    = lang.strip(),
                                 use_itn     = True,
                                 batch_size_s= 60,
-                            ) if hit else None
+                            )
                             logger.info(f"model_asr.generate {result}")
                             audio_vad = audio_vad[end:]
                             last_vad_beg = last_vad_end = -1
@@ -325,19 +336,12 @@ async def websocket_endpoint(websocket: WebSocket):
                                 sv_audio_buffer = np.array([], dtype=np.float32)
                             
                             if  result is not None:
-                                if result[0]['avg_logprob'] < config.avg_logprob_thr:
-                                    data = '...'
-                                    logger.info(f'avg_logprob < {config.avg_logprob_thr}, so output ...')
-                                else:
-                                    data = format_str_v3(result[0]['text'])
-                                
-                                if data == '...' or contains_chinese_english_number(data):
-                                    response = TranscriptionResponse(
-                                        code=0,
-                                        msg=f"success",
-                                        data=data
-                                    )
-                                    await websocket.send_json(response.model_dump())
+                                response = TranscriptionResponse(
+                                    code=0,
+                                    info=json.dumps(result[0], ensure_ascii=False),
+                                    data=format_str_v3(result[0]['text'])
+                                )
+                                await websocket.send_json(response.model_dump())
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
@@ -355,8 +359,8 @@ async def websocket_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the FastAPI app with a specified port.")
     parser.add_argument('--port', type=int, default=27000, help='Port number to run the FastAPI app on.')
-    #parser.add_argument('--certfile', type=str, default='/etc/perm/labs.makee.com_bundle.crt', help='SSL certificate file')
-    #parser.add_argument('--keyfile', type=str, default='/etc/perm/labs.makee.com.key', help='SSL key file')
+    parser.add_argument('--certfile', type=str, default='/etc/perm/labs.makee.com_bundle.crt', help='SSL certificate file')
+    parser.add_argument('--keyfile', type=str, default='/etc/perm/labs.makee.com.key', help='SSL key file')
 
     args = parser.parse_args()
     
@@ -370,7 +374,7 @@ if __name__ == "__main__":
         },
         "handlers": {
             "default": {
-                "level": "INFO",
+                "level": "DEBUG",
                 "formatter": "default",
                 "class": "logging.StreamHandler",
                 "stream": "ext://sys.stdout",
@@ -379,16 +383,16 @@ if __name__ == "__main__":
         "loggers": {
             "": {  # root logger
                 "handlers": ["default"],
-                "level": "INFO",
+                "level": "DEBUG",
                 "propagate": False,
             },
             "uvicorn": {  # uvicorn logger
                 "handlers": ["default"],
-                "level": "INFO",
+                "level": "DEBUG",
                 "propagate": False,
             },
         },
     }
     
-    #uvicorn.run(app, host="0.0.0.0", port=args.port, ssl_certfile=args.certfile, ssl_keyfile=args.keyfile)
+    uvicorn.run(app, host="0.0.0.0", port=args.port, ssl_certfile=args.certfile, ssl_keyfile=args.keyfile)
     uvicorn.run(app, host="0.0.0.0", port=args.port, log_config=log_config)
