@@ -17,6 +17,7 @@ from modelscope.pipelines import pipeline
 from loguru import logger
 import sys
 import json
+import traceback
 
 logger.remove()
 log_format = "{time:YYYY-MM-DD HH:mm:ss} [{level}] {file}:{line} - {message}"
@@ -25,7 +26,7 @@ logger.add(sys.stderr, format=log_format, level="ERROR", filter=lambda record: r
 
 
 class Config(BaseSettings):
-    sv_thr: float = Field(0.25, description="Speaker verification threshold")
+    sv_thr: float = Field(0.15, description="Speaker verification threshold")
     chunk_size_ms: int = Field(300, description="Chunk size in milliseconds")
     sample_rate: int = Field(16000, description="Sample rate in Hz")
     bit_depth: int = Field(16, description="Bit depth")
@@ -156,8 +157,8 @@ def contains_chinese_english_number(s: str) -> bool:
 
 sv_pipeline = pipeline(
     task='speaker-verification',
-    model='iic/speech_eres2netv2w24s4ep4_sv_zh-cn_16k-common',
-    model_revision='v1.0.1'
+    model='iic/speech_eres2net_large_sv_zh-cn_3dspeaker_16k',
+    model_revision='v1.0.0'
 )
 
 model_asr = AutoModel(
@@ -198,9 +199,9 @@ def speaker_verify(audio, sv_thr):
     hit = False
     for k, v in reg_spks.items():
         res_sv = sv_pipeline([audio, v["data"]], sv_thr)
-        logger.info(f"[speaker check] {k}: {res_sv}")
         if res_sv["score"] >= sv_thr:
            hit = True
+        logger.info(f"[speaker_verify] audio_len: {len(audio)}; sv_thr: {sv_thr}; hit: {hit}; {k}: {res_sv}")
     return hit, k
 
 app = FastAPI()
@@ -255,9 +256,6 @@ async def websocket_endpoint(websocket: WebSocket):
         chunk_size = int(config.chunk_size_ms * config.sample_rate / 1000)
         audio_buffer = np.array([], dtype=np.float32)
         audio_vad = np.array([], dtype=np.float32)
-        
-        if sv:
-            sv_audio_buffer = np.array([], dtype=np.float32)
 
         cache = {}
         last_vad_beg = last_vad_end = -1
@@ -283,14 +281,14 @@ async def websocket_endpoint(websocket: WebSocket):
             while len(audio_buffer) >= chunk_size:
                 chunk = audio_buffer[:chunk_size]
                 audio_buffer = audio_buffer[chunk_size:]
-                
+                audio_vad = np.append(audio_vad, chunk)
+
                 if last_vad_beg > 1 and sv:
                     # speaker verify
                     # If no hit is detected, continue accumulating audio data and check again until a hit is detected
-                    # the `hit`、`sv_audio_buffer` will reset after `model_asr.generate`).
+                    # `hit` will reset after `model_asr.generate`).
                     if not hit:
-                        sv_audio_buffer = np.append(sv_audio_buffer, chunk)
-                        hit, speaker = speaker_verify(sv_audio_buffer, config.sv_thr)
+                        hit, speaker = speaker_verify(audio_vad[int((last_vad_beg - offset) * config.sample_rate / 1000):], config.sv_thr)
                         if hit:
                             response = TranscriptionResponse(
                                 code=2,
@@ -298,9 +296,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                 data=speaker
                             )
                             await websocket.send_json(response.model_dump())
-                            sv_audio_buffer = np.array([], dtype=np.float32)
-                
-                audio_vad = np.append(audio_vad, chunk)
 
                 res = model_vad.generate(input=chunk, cache=cache, is_final=False, chunk_size=config.chunk_size_ms)
                 #logger.info(f"vad inference: {res}")
@@ -312,28 +307,23 @@ async def websocket_endpoint(websocket: WebSocket):
                         if segment[1] > -1: # speech end
                             last_vad_end = segment[1]
                         if last_vad_beg > -1 and last_vad_end > -1:
-                            logger.info(f"vad segment: {[last_vad_beg, last_vad_end]}")
                             last_vad_beg -= offset
                             last_vad_end -= offset
                             offset += last_vad_end
                             beg = int(last_vad_beg * config.sample_rate / 1000)
                             end = int(last_vad_end * config.sample_rate / 1000)
+                            logger.info(f"[vad segment] audio_len: {end - beg}")
                             result = None if sv and not hit else model_asr.generate(
-                                input       = audio_vad[beg:end],
-                                cache       = {},
-                                language    = lang.strip(),
-                                use_itn     = True,
-                                batch_size_s= 60,
+                                input           = audio_vad[beg:end],
+                                cache           = {},
+                                language        = lang.strip(),
+                                use_itn         = True,
+                                batch_size_s    = 60,
                             )
                             logger.info(f"model_asr.generate {result}")
                             audio_vad = audio_vad[end:]
                             last_vad_beg = last_vad_end = -1
-                            
-                            if sv:
-                                # reset `hit`
-                                hit = False
-                                # reset `sv_audio_buffer`
-                                sv_audio_buffer = np.array([], dtype=np.float32)
+                            hit = False
                             
                             if  result is not None:
                                 response = TranscriptionResponse(
@@ -342,16 +332,17 @@ async def websocket_endpoint(websocket: WebSocket):
                                     data=format_str_v3(result[0]['text'])
                                 )
                                 await websocket.send_json(response.model_dump())
+                                
+                        # logger.debug(f'last_vad_beg: {last_vad_beg}; last_vad_end: {last_vad_end} len(audio_vad): {len(audio_vad)}')
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error: {e}\nCall stack:\n{traceback.format_exc()}")
         await websocket.close()
     finally:
         audio_buffer = np.array([], dtype=np.float32)
         audio_vad = np.array([], dtype=np.float32)
-        sv_audio_buffer = np.array([], dtype=np.float32)
         cache.clear()
         logger.info("Cleaned up resources after WebSocket disconnect")
 
@@ -359,40 +350,10 @@ async def websocket_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the FastAPI app with a specified port.")
     parser.add_argument('--port', type=int, default=27000, help='Port number to run the FastAPI app on.')
-    parser.add_argument('--certfile', type=str, default='/etc/perm/labs.makee.com_bundle.crt', help='SSL certificate file')
-    parser.add_argument('--keyfile', type=str, default='/etc/perm/labs.makee.com.key', help='SSL key file')
+    # parser.add_argument('--certfile', type=str, default='your_ssl_perm.crt', help='SSL certificate file')
+    # parser.add_argument('--keyfile', type=str, default='your_ssl_perm.key', help='SSL key file')
 
     args = parser.parse_args()
     
-    log_config = {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "default": {
-                "format": "%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s",
-            },
-        },
-        "handlers": {
-            "default": {
-                "level": "DEBUG",
-                "formatter": "default",
-                "class": "logging.StreamHandler",
-                "stream": "ext://sys.stdout",
-            },
-        },
-        "loggers": {
-            "": {  # root logger
-                "handlers": ["default"],
-                "level": "DEBUG",
-                "propagate": False,
-            },
-            "uvicorn": {  # uvicorn logger
-                "handlers": ["default"],
-                "level": "DEBUG",
-                "propagate": False,
-            },
-        },
-    }
-    
-    uvicorn.run(app, host="0.0.0.0", port=args.port, ssl_certfile=args.certfile, ssl_keyfile=args.keyfile)
-    uvicorn.run(app, host="0.0.0.0", port=args.port, log_config=log_config)
+    # uvicorn.run(app, host="0.0.0.0", port=args.port, ssl_certfile=args.certfile, ssl_keyfile=args.keyfile)
+    uvicorn.run(app, host="0.0.0.0", port=args.port)
