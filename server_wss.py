@@ -314,22 +314,30 @@ async def websocket_endpoint(websocket: WebSocket):
                 # with open('chunk.pcm', 'ab') as f:
                 #     logger.debug(f'write {f.write(chunk)} bytes to `chunk.pcm`')
                     
-                if last_vad_beg > 1 and sv:
-                    # speaker verify
-                    # If no hit is detected, continue accumulating audio data and check again until a hit is detected
-                    # `hit` will reset after `asr`.
-                    if not hit:
-                        hit, speaker = speaker_verify(audio_vad[int((last_vad_beg - offset) * config.sample_rate / 1000):], config.sv_thr)
-                        if hit:
-                            response = TranscriptionResponse(
-                                code=2,
-                                info="detect speaker",
-                                data=speaker
-                            )
-                            await websocket.send_json(response.model_dump())
+                if last_vad_beg > 1:
+                    if sv:
+                        # speaker verify
+                        # If no hit is detected, continue accumulating audio data and check again until a hit is detected
+                        # `hit` will reset after `asr`.
+                        if not hit:
+                            hit, speaker = speaker_verify(audio_vad[int((last_vad_beg - offset) * config.sample_rate / 1000):], config.sv_thr)
+                            if hit:
+                                response = TranscriptionResponse(
+                                    code=2,
+                                    info="detect speaker",
+                                    data=speaker
+                                )
+                                await websocket.send_json(response.model_dump())
+                    else:
+                        response = TranscriptionResponse(
+                            code=2,
+                            info="detect speech",
+                            data=''
+                        )
+                        await websocket.send_json(response.model_dump())
 
                 res = model_vad.generate(input=chunk, cache=cache, is_final=False, chunk_size=config.chunk_size_ms)
-                logger.info(f"vad inference: {res}")
+                # logger.info(f"vad inference: {res}")
                 if len(res[0]["value"]):
                     vad_segments = res[0]["value"]
                     for segment in vad_segments:
