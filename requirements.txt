@@ -1,6 +1,6 @@
 fastapi
 funasr
-modelscope
+modelscope==1.17.1
 numpy<=1.26.4
 pydantic
 pydantic_settings
@@ -10,7 +10,7 @@ torch<=2.3
 torchaudio
 uvicorn
 addict
-datasets
+datasets==2.21.0
 pillow
 simplejson
 sortedcontainers
