@@ -19,6 +19,7 @@ from loguru import logger
 import sys
 import json
 import traceback
+import time
 
 logger.remove()
 log_format = "{time:YYYY-MM-DD HH:mm:ss} [{level}] {file}:{line} - {message}"
@@ -27,7 +28,7 @@ logger.add(sys.stderr, format=log_format, level="ERROR", filter=lambda record: r
 
 
 class Config(BaseSettings):
-    sv_thr: float = Field(0.2, description="Speaker verification threshold")
+    sv_thr: float = Field(0.25, description="Speaker verification threshold")
     chunk_size_ms: int = Field(300, description="Chunk size in milliseconds")
     sample_rate: int = Field(16000, description="Sample rate in Hz")
     bit_depth: int = Field(16, description="Bit depth")
@@ -218,6 +219,7 @@ def asr(audio, lang, cache, use_itn=False):
     # with open('test.pcm', 'ab') as f:
     #     logger.debug(f'write {f.write(audio)} bytes to `test.pcm`')
     # result = asr_pipeline(audio, lang)
+    start_time = time.time()
     result = model_asr.generate(
         input           = audio,
         cache           = cache,
@@ -225,6 +227,9 @@ def asr(audio, lang, cache, use_itn=False):
         use_itn         = use_itn,
         batch_size_s    = 60,
     )
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    logger.debug(f"asr elapsed: {elapsed_time * 1000:.2f} milliseconds")
     return result
 
 app = FastAPI()
