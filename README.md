@@ -1,5 +1,7 @@
 ## real-time streaming sensevoice with speaker verification
 
+
+
 It has inherited some enhanced features for sensevoice:
 - **VAD detection**
 - **real-time streaming recognition**
@@ -8,10 +10,23 @@ It has inherited some enhanced features for sensevoice:
 
 ## Update Log
 
+#### 2024-10-29
+
+1. New web_client.
+    > ![alt text](assets/web_client.png)
+    > 1. The interface is simple, and the transcription results will automatically scroll to the bottom of the page when there are updates.
+    > 2. More settings can be displayed by moving the cursor to the record button in the upper right corner.
+    > 3. The language selection has been changed to a dropdown menu.
+    > 4. Added settings for the server IP and port.
+    > 5. The font size of the transcription results can be adjusted by dragging the slider in the lower right corner.
+    > 6. The transcription results have been changed to an editable text box style.
+    > 7. Added a hyperlink to the GitHub project.
+
+
 #### 2024-09-30
 
 1. Optimized speaker verification processing by accumulating audio data to improve recognition accuracy.
-1. Added `logprob` to the recognition results to represent the confidence of the recognition, for use by upper-level applications.
+2. Added `logprob` to the recognition results to represent the confidence of the recognition, for use by upper-level applications.
 
 
 ## Installation
