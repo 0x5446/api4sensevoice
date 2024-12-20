@@ -295,7 +295,8 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_bytes()
             # logger.info(f"received {len(data)} bytes")
-
+            if not data:  # 检查是否接收到结束信号
+                break
             
             buffer += data
             if len(buffer) < 2:
@@ -370,7 +371,19 @@ async def websocket_endpoint(websocket: WebSocket):
                                     data=format_str_v3(result[0]['text'])
                                 )
                                 await websocket.send_json(response.model_dump())
-                                
+        # 处理剩余的音频数据
+        if len(audio_vad) > 0:
+            logger.info(f"处理剩余音频数据: {len(audio_vad)}")
+            result = asr(audio_vad, lang.strip(), cache_asr, True)
+            logger.info(f"asr response: {result}")
+            if result is not None:
+                response = TranscriptionResponse(
+                    code=0,
+                    info=json.dumps(result[0], ensure_ascii=False),
+                    data=format_str_v3(result[0]['text']),
+                    userid=userid
+                )
+                await websocket.send_json(response.model_dump())
                         # logger.debug(f'last_vad_beg: {last_vad_beg}; last_vad_end: {last_vad_end} len(audio_vad): {len(audio_vad)}')
 
     except WebSocketDisconnect:
