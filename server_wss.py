@@ -1,4 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +22,8 @@ import sys
 import json
 import traceback
 import time
+
+from config import Config as Config2
 
 logger.remove()
 log_format = "{time:YYYY-MM-DD HH:mm:ss} [{level}] {file}:{line} - {message}"
@@ -172,10 +176,9 @@ asr_pipeline = pipeline(
 )
 
 model_asr = AutoModel(
-    model="iic/SenseVoiceSmall",
+    model=Config2.model_path,
     trust_remote_code=True,
     remote_code="./model.py",    
-    device="cuda:0",
     disable_update=True
 )
 
@@ -242,6 +245,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# @app.get("/")
+# def index():
+#     with open('client_wss.html', 'r') as file:
+#         html_content = file.read()
+#     return HTMLResponse(content=html_content, status_code=200)
+
+templates = Jinja2Templates(directory="./")
+
+@app.get("/")
+def index(request: Request):
+    print('Config.wss_path', Config2.wss_path)
+    return templates.TemplateResponse("client_wss.html", {"request": request, "path": Config2.wss_path})
+
 @app.exception_handler(Exception)
 async def custom_exception_handler(request: Request, exc: Exception):
     logger.error("Exception occurred", exc_info=True)
@@ -255,6 +271,7 @@ async def custom_exception_handler(request: Request, exc: Exception):
         data = ""
     else:
         status_code = 500
+        print(exc)
         message = "Internal server error: " + str(exc)
         data = ""
 
@@ -387,9 +404,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the FastAPI app with a specified port.")
-    parser.add_argument('--port', type=int, default=27000, help='Port number to run the FastAPI app on.')
-    # parser.add_argument('--certfile', type=str, default='path_to_your_SSL_certificate_file.crt', help='SSL certificate file')
-    # parser.add_argument('--keyfile', type=str, default='path_to_your_SSL_certificate_file.key', help='SSL key file')
+    parser.add_argument('--port', type=int, default=8888, help='Port number to run the FastAPI app on.')
+    parser.add_argument('--certfile', type=str, default='path_to_your_SSL_certificate_file.crt', help='SSL certificate file')
+    parser.add_argument('--keyfile', type=str, default='path_to_your_SSL_certificate_file.key', help='SSL key file')
     args = parser.parse_args()
-    # uvicorn.run(app, host="0.0.0.0", port=args.port, ssl_certfile=args.certfile, ssl_keyfile=args.keyfile)
-    uvicorn.run(app, host="0.0.0.0", port=args.port)
+    if Config2.use_https:
+        logger.info(f"Running with SSL on port {args.port}")
+        uvicorn.run(app, host="0.0.0.0", port=args.port, ssl_certfile=args.certfile, ssl_keyfile=args.keyfile)
+    else:
+        uvicorn.run(app, host="0.0.0.0", port=args.port)

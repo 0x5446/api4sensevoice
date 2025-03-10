@@ -32,6 +32,7 @@
         Transcription result will be displayed below:
         <p id="transcriptionResult"></p>
     </div>
+    <div id="websocket-config" data-path="{{ path }}"></div>
 </body>
 <script>
     var recordButton = document.getElementById('recordButton');
@@ -41,7 +42,8 @@
     var record = null;
     var timeInte = null;
     var isRecording = false;
-
+    var pathElement = document.getElementById('websocket-config');
+    var path = pathElement.getAttribute('data-path');
     recordButton.onclick = function() {
         if (!isRecording) {
             startRecording();
@@ -52,6 +54,10 @@
 
     function startRecording() {
         console.log('Start Recording');
+        if (!record) {
+            alert('No record device is available.');
+            return;
+        }
         var speakerVerificationCheckbox = document.getElementById('speakerVerification');
         var sv = speakerVerificationCheckbox.checked ? 1 : 0;
         var lang = document.getElementById("lang").value
@@ -65,7 +71,7 @@
         }
         var queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
 
-        ws = new WebSocket(`wss://your_wss_server_address/ws/transcribe${queryString}`);
+        ws = new WebSocket(`{{path}}/ws/transcribe${queryString}`);
         ws.binaryType = 'arraybuffer';
 
         ws.onopen = function(event) {
@@ -142,6 +148,7 @@
             },
             function(error) {
                 console.log(error);
+                alert('Failed to get record device');
             }
         );
     }

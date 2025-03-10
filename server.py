@@ -17,6 +17,8 @@ import uvicorn
 import time
 import logging
 
+from config import Config as Config2
+
 # Set up logging
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
@@ -150,7 +152,7 @@ app.add_middleware(
 )
 
 # Initialize the model outside the endpoint to avoid reloading it for each request
-model = AutoModel(model="iic/SenseVoiceSmall",
+model = AutoModel(model=Config2.model_path,
 #                  vad_model="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
 #                  vad_kwargs={"max_single_segment_time": 30000},
                   trust_remote_code=True,
@@ -278,5 +280,8 @@ if __name__ == "__main__":
     parser.add_argument('--certfile', type=str, default='path_to_your_certfile', help='SSL certificate file')
     parser.add_argument('--keyfile', type=str, default='path_to_your_keyfile', help='SSL key file')
     args = parser.parse_args()
-    
-    uvicorn.run(app, host="0.0.0.0", port=args.port, ssl_certfile=args.certfile, ssl_keyfile=args.keyfile)
+    if Config2.use_https:
+        logger.info(f"Running with SSL on port {args.port}")
+        uvicorn.run(app, host="0.0.0.0", port=args.port, ssl_certfile=args.certfile, ssl_keyfile=args.keyfile)
+    else:
+        uvicorn.run(app, host="0.0.0.0", port=args.port)
